@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Object Tracking</title>
+  <!-- Load TensorFlow.js và model COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    #container { position: relative; width: 100vw; height: 100vh; }
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    #status { position: absolute; top: 10px; left: 10px; color: #00ff00; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 4px; z-index: 10; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="status">Đang tải mô hình AI...</div>
+    <video id="webcam" playsinline autoplay muted></video>
+    <canvas id="output"></canvas>
+  </div>
+
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    let model;
+
+    // 1. Khởi động Camera sau của điện thoại
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" }, // Yêu cầu camera sau
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          resolve(video);
+        };
+      });
+    }
+
+    // 2. Vòng lặp nhận diện và tracking theo thời gian thực
+    async function detectFrame() {
+      // Dự đoán vị trí các vật thể trong khung hình
+      const predictions = await model.detect(video);
+
+      // Xóa khung hình cũ
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Vẽ bounding box và nhãn đè lên vật thể
+      predictions.forEach(prediction => {
+        const [x, y, width, height] = prediction.bbox;
+        const label = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+
+        // Vẽ hộp bao quanh vật thể
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, width, height);
+
+        // Vẽ nền chữ
+        ctx.fillStyle = '#00FF00';
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillRect(x, y > 20 ? y - 20 : 0, textWidth + 10, 20);
+
+        // Ghi tên vật thể
+        ctx.fillStyle = '#000000';
+        ctx.font = '16px Arial';
+        ctx.fillText(label, x + 5, y > 20 ? y - 5 : 15);
+      });
+
+      // Lặp lại ở khung hình tiếp theo (realtime loop)
+      requestAnimationFrame(detectFrame);
+    }
+
+    async function main() {
+      await setupCamera();
+      statusText.innerText = "Đang nạp mô hình...";
+      model = await cocoSsd.load();
+      statusText.innerText = "Đang tracking vật thể realtime";
+      detectFrame();
+    }
+
+    main().catch(err => {
+      statusText.innerText = "Lỗi: " + err.message;
+    });
+  </script>
+</body>
+</html>
